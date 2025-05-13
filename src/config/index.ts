@@ -4,48 +4,78 @@ import path from 'path';
 // Load environment variables
 dotenv.config();
 
-const env = process.env.NODE_ENV || 'development';
+/**
+ * Application configuration
+ * 
+ * This module manages all application configuration settings.
+ * It loads values from environment variables with sensible defaults.
+ */
 
-// Base configuration for all environments
-const baseConfig = {
-  env,
+// Base configuration object
+const config = {
+  // Environment
+  env: process.env.NODE_ENV || 'development',
+  
+  // Application settings
   app: {
     name: 'Google Calendar MCP Server',
-    version: '0.1.0',
-    description: 'AI-powered assistant for Google Calendar and Google Docs using MCP',
-    port: Number(process.env.PORT) || 3000,
-    apiBaseUrl: process.env.API_BASE_URL || `http://localhost:${process.env.PORT || 3000}`,
+    version: process.env.npm_package_version || '0.1.0',
+    description: 'Model Control Protocol server for Google Calendar integration',
+    port: parseInt(process.env.PORT || '3000', 10),
+    apiBaseUrl: process.env.API_BASE_URL || 'http://localhost:3000/api',
     logLevel: process.env.LOG_LEVEL || 'info'
   },
+  
+  // Security settings
   security: {
-    sessionSecret: process.env.SESSION_SECRET || 'change-this-session-secret',
-    jwtSecret: process.env.JWT_SECRET || 'change-this-jwt-secret',
-    corsOrigins: process.env.CORS_ORIGINS?.split(',') || ['http://localhost:3000']
+    sessionSecret: process.env.SESSION_SECRET || 'dev-session-secret',
+    jwtSecret: process.env.JWT_SECRET || 'dev-jwt-secret',
+    corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:3000').split(','),
+    webhookSecret: process.env.WEBHOOK_SECRET || 'dev-webhook-secret'
   },
-  database: {
-    mongoUri: process.env.MONGODB_URI || 'mongodb://localhost:27017/google-calendar-mcp',
-    user: process.env.MONGODB_USER || '',
-    password: process.env.MONGODB_PASSWORD || ''
-  },
-  cache: {
-    redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
-    redisPassword: process.env.REDIS_PASSWORD || ''
-  },
+  
+  // Google API settings
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID || '',
     clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
-    redirectUri: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/auth/google/callback',
-    scopes: process.env.GOOGLE_SCOPES?.split(',') || [
+    redirectUri: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/api/v1/auth/google/callback',
+    scopes: [
       'https://www.googleapis.com/auth/calendar',
-      'https://www.googleapis.com/auth/documents',
+      'https://www.googleapis.com/auth/calendar.events',
+      'https://www.googleapis.com/auth/docs',
       'https://www.googleapis.com/auth/drive',
       'https://www.googleapis.com/auth/userinfo.email',
       'https://www.googleapis.com/auth/userinfo.profile'
     ]
   },
+  
+  // Database settings
+  database: {
+    url: process.env.DATABASE_URL || 'mongodb://localhost:27017/mcp-server',
+    options: {
+      useNewUrlParser: true,
+      useUnifiedTopology: true
+    }
+  },
+  
+  // Redis cache settings
+  cache: {
+    redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
+    ttl: parseInt(process.env.CACHE_TTL || '3600', 10) // Default: 1 hour
+  },
+  
+  // Queue settings
+  queue: {
+    jobAttemptLimit: parseInt(process.env.JOB_ATTEMPT_LIMIT || '3', 10),
+    jobTimeout: parseInt(process.env.JOB_TIMEOUT || '60000', 10) // Default: 1 minute
+  },
+  
+  // AI model settings
   ai: {
-    defaultModel: process.env.DEFAULT_MODEL || 'gpt-4o',
-    fallbackEnabled: process.env.MODEL_FALLBACK_ENABLED === 'true',
+    defaultModel: process.env.DEFAULT_MODEL || 'gpt-3.5-turbo',
+    fallbackEnabled: process.env.FALLBACK_ENABLED === 'true',
+    temperature: parseFloat(process.env.AI_TEMPERATURE || '0.7'),
+    maxTokens: parseInt(process.env.AI_MAX_TOKENS || '1000', 10),
     openai: {
       apiKey: process.env.OPENAI_API_KEY || '',
       orgId: process.env.OPENAI_ORG_ID || ''
@@ -57,46 +87,68 @@ const baseConfig = {
       apiKey: process.env.GOOGLE_AI_API_KEY || ''
     }
   },
-  queue: {
-    maxConcurrentJobs: Number(process.env.MAX_CONCURRENT_JOBS) || 5,
-    jobAttemptLimit: Number(process.env.JOB_ATTEMPT_LIMIT) || 3,
-    jobRetentionDays: Number(process.env.JOB_RETENTION_DAYS) || 7
+  
+  // Scheduler settings
+  scheduler: {
+    timezone: process.env.TIMEZONE || 'UTC',
+    logRotationDays: parseInt(process.env.LOG_ROTATION_DAYS || '7', 10),
+    defaultCron: process.env.DEFAULT_CRON || '0 * * * *' // Default: Every hour
   },
-  reminders: {
-    defaultEnabled: process.env.DEFAULT_REMINDERS_ENABLED === 'true',
-    defaultMinutesBefore: process.env.DEFAULT_REMINDER_MINUTES_BEFORE 
-      ? JSON.parse(process.env.DEFAULT_REMINDER_MINUTES_BEFORE) 
-      : [1440, 60] // 1 day and 1 hour before
-  },
-  logging: {
-    enableRequestLogging: process.env.ENABLE_REQUEST_LOGGING === 'true',
-    enablePerformanceMetrics: process.env.ENABLE_PERFORMANCE_METRICS === 'true'
-  },
+  
+  // Rate limiting
   rateLimit: {
-    windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
-    maxRequests: Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 100
+    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000', 10), // Default: 1 minute
+    maxRequests: parseInt(process.env.RATE_LIMIT_MAX || '100', 10) // Default: 100 requests per minute
   }
 };
 
-// Environment-specific configurations
-const envConfig: Record<string, Record<string, unknown>> = {
-  development: {},
-  test: {
-    database: {
-      mongoUri: 'mongodb://localhost:27017/google-calendar-mcp-test'
+/**
+ * Get a configuration value by path
+ * 
+ * @param {string} path - Dot-notation path to the config value
+ * @param {any} defaultValue - Default value if path is not found
+ * @returns {any} Configuration value
+ */
+export const get = (path: string, defaultValue?: any): any => {
+  const parts = path.split('.');
+  let result: any = config;
+  
+  for (const part of parts) {
+    if (result === undefined || result === null) {
+      return defaultValue;
     }
-  },
-  production: {
-    app: {
-      logLevel: 'warn'
-    }
+    result = result[part];
   }
+  
+  return result === undefined ? defaultValue : result;
 };
 
-// Merge base and environment-specific configurations
-const config = {
-  ...baseConfig,
-  ...(envConfig[env] || {})
+/**
+ * Check if the application is running in development mode
+ * 
+ * @returns {boolean} Whether the app is in development mode
+ */
+export const isDevelopment = (): boolean => {
+  return config.env === 'development';
 };
 
+/**
+ * Check if the application is running in production mode
+ * 
+ * @returns {boolean} Whether the app is in production mode
+ */
+export const isProduction = (): boolean => {
+  return config.env === 'production';
+};
+
+/**
+ * Check if the application is running in test mode
+ * 
+ * @returns {boolean} Whether the app is in test mode
+ */
+export const isTest = (): boolean => {
+  return config.env === 'test';
+};
+
+// Export the config object as default
 export default config;

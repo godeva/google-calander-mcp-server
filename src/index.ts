@@ -1,71 +1,109 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
+import compression from 'compression';
 import morgan from 'morgan';
-import dotenv from 'dotenv';
-import { rateLimit } from 'express-rate-limit';
-import { logger } from './utils/logger';
-import { errorHandler } from './utils/error-handler';
 import { router as apiRouter } from './api';
-import { router as webhookRouter } from './webhooks';
+import { router as webhooksRouter } from './webhooks';
+import { initializeCore } from './core';
+import { initializeIntegrations } from './integrations';
+import { initializeModels } from './models';
+import { logger } from './utils/logger';
+import { handleError, createApiError } from './utils/error-handler';
+import config from './config';
 
-// Load environment variables
-dotenv.config();
+/**
+ * Google Calendar MCP Server Application
+ * 
+ * This is the main entry point for the application.
+ */
 
+// Create Express application
 const app = express();
-const PORT = process.env.PORT || 3000;
 
-// Security middleware
-app.use(helmet());
+// Middleware
+app.use(helmet()); // Security headers
 app.use(cors({
-  origin: process.env.CORS_ORIGINS?.split(',') || '*',
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  origin: config.security.corsOrigins,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  credentials: true
 }));
-
-// Apply rate limiting
-const limiter = rateLimit({
-  windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes by default
-  max: Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 100, // limit each IP to 100 requests per windowMs
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: 'Too many requests from this IP, please try again after a while'
-});
-app.use(limiter);
+app.use(compression()); // Response compression
+app.use(express.json()); // Parse JSON request bodies
+app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
 
 // Logging middleware
-if (process.env.ENABLE_REQUEST_LOGGING === 'true') {
-  app.use(morgan('dev'));
-}
+app.use(morgan(config.env === 'production' ? 'combined' : 'dev', {
+  stream: {
+    write: (message: string) => logger.http(message.trim())
+  }
+}));
 
-// Body parsers
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Request ID middleware
+app.use((req: Request, res: Response, next: NextFunction) => {
+  req.id = `req-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
+  next();
+});
 
-// API routes
+// Mount routers
 app.use('/api', apiRouter);
-app.use('/webhooks', webhookRouter);
+app.use('/webhooks', webhooksRouter);
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() });
-});
-
-// Error handling middleware
-app.use(errorHandler);
-
-// Start the server
-const server = app.listen(PORT, () => {
-  logger.info(`Server is running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
-});
-
-// Handle graceful shutdown
-process.on('SIGTERM', () => {
-  logger.info('SIGTERM signal received: closing HTTP server');
-  server.close(() => {
-    logger.info('HTTP server closed');
-    process.exit(0);
+// Root health check
+app.get('/', (req: Request, res: Response) => {
+  res.status(200).json({
+    name: 'Google Calendar MCP Server',
+    version: config.app.version,
+    status: 'ok',
+    timestamp: new Date().toISOString()
   });
 });
 
-export default app;
+// Not found handler
+app.use((req: Request, res: Response, next: NextFunction) => {
+  next(createApiError(404, `Route ${req.method} ${req.path} not found`));
+});
+
+// Error handler
+app.use(handleError);
+
+// Application startup function
+const startServer = async (): Promise<void> => {
+  try {
+    // Initialize all modules
+    await initializeCore();
+    await initializeIntegrations();
+    await initializeModels();
+    
+    // Start the server
+    const port = config.app.port || 3000;
+    app.listen(port, () => {
+      logger.info(`Server started on port ${port} in ${config.env} mode`);
+      logger.info(`API endpoint: http://localhost:${port}/api`);
+      logger.info(`Webhooks endpoint: http://localhost:${port}/webhooks`);
+    });
+    
+    // Handle graceful shutdown
+    const shutdown = async (): Promise<void> => {
+      logger.info('Shutting down server...');
+      // Perform cleanup operations here
+      process.exit(0);
+    };
+    
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
+    
+  } catch (error) {
+    logger.error('Failed to start server:', error);
+    process.exit(1);
+  }
+};
+
+// Start the server if this file is run directly
+if (require.main === module) {
+  startServer();
+}
+
+// Export app for testing
+export { app, startServer };
