@@ -11,6 +11,8 @@
     "test:unit": "jest tests/unit",
     "test:integration": "jest tests/integration",
     "test:e2e": "jest tests/e2e",
+    "test:coverage": "jest --coverage",
+    "test:watch": "jest --watch",
     "lint": "eslint . --ext .ts",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
     "prepare": "husky install"
@@ -32,8 +34,10 @@
   "license": "MIT",
   "dependencies": {
     "@pinecone-database/pinecone": "^1.1.2",
+    "@types/compression": "^1.7.5",
     "bcrypt": "^5.1.1",
     "bull": "^4.12.0",
+    "compression": "^1.8.0",
     "cors": "^2.8.5",
     "date-fns": "^3.3.1",
     "dotenv": "^16.3.1",

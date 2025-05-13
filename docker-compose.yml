@@ -1,0 +1,87 @@
+version: '3.8'
+
+services:
+  # MCP Server Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: google-calendar-mcp-server:latest
+    container_name: mcp-server
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - redis
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - REDIS_URL=redis://redis:6379
+      # Add your Google API credentials here
+      - GOOGLE_CLIENT_ID=your-client-id
+      - GOOGLE_CLIENT_SECRET=your-client-secret
+      - GOOGLE_REDIRECT_URI=http://localhost:3000/api/v1/auth/google/callback
+      # Security settings
+      - JWT_SECRET=change-this-to-a-secure-secret
+      - SESSION_SECRET=change-this-to-a-secure-secret
+      - WEBHOOK_SECRET=change-this-to-a-secure-secret
+      # AI settings
+      - OPENAI_API_KEY=your-openai-api-key
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - mcp-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Redis for caching and queue management
+  redis:
+    image: redis:alpine
+    container_name: mcp-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - mcp-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # MongoDB (optional, if needed for persistent storage)
+  # Uncomment to enable
+  # mongodb:
+  #   image: mongo:latest
+  #   container_name: mcp-mongodb
+  #   restart: unless-stopped
+  #   ports:
+  #     - "27017:27017"
+  #   environment:
+  #     - MONGO_INITDB_ROOT_USERNAME=root
+  #     - MONGO_INITDB_ROOT_PASSWORD=example
+  #   volumes:
+  #     - mongodb-data:/data/db
+  #   networks:
+  #     - mcp-network
+  #   healthcheck:
+  #     test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 30s
+
+networks:
+  mcp-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+  # mongodb-data:  # Uncomment if using MongoDB

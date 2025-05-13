@@ -1,175 +1,214 @@
 # Google Calendar MCP Server
 
-**Your personal AI-powered assistant for Google Calendar and Google Docs.**
-
-Google Calendar MCP is an open-source server that turns natural language into structured schedules and notes. Powered by modern LLMs and Model Control Protocol (MCP), it helps you plan, remember, and reflect—automatically.
-
----
+A Model Control Protocol (MCP) server implementation for Google Calendar integration. This server provides intelligent calendar management through natural language processing and machine learning.
 
 ## Features
 
-- **Natural-language agenda parsing**  
-  "Meet Sam for coffee at 2PM next Thursday" → Google Calendar event + reminders
+- **Natural Language Processing**: Interact with your calendar using plain English commands
+- **Intelligent Scheduling**: Smart scheduling that respects your preferences and availability
+- **Google Calendar Integration**: Seamlessly connects with Google Calendar
+- **Google Docs Integration**: Create and manage meeting notes and documents
+- **MCP Protocol Support**: Implements the Model Control Protocol for AI integration
+- **Extensible Architecture**: Modular design allows for easy integration of new features
 
-- **Google Docs journaling**  
-  "Write a weekly reflection every Sunday" → Auto-generated doc + timestamped entry
+## Table of Contents
 
-- **Reminders that work**  
-  Auto-set reminders: 1 day and 1 hour before events (or customize your own)
+- [Setup](#setup)
+  - [Prerequisites](#prerequisites)
+  - [Installation](#installation)
+  - [Configuration](#configuration)
+- [Usage](#usage)
+  - [Starting the Server](#starting-the-server)
+  - [API Endpoints](#api-endpoints)
+  - [MCP Commands](#mcp-commands)
+- [Development](#development)
+  - [Project Structure](#project-structure)
+  - [Adding New Features](#adding-new-features)
+  - [Testing](#testing)
+- [License](#license)
 
-- **Model-flexible (GPT, Claude, Gemini)**  
-  Bring your own LLM and plug it in via adapters
-
-- **Privacy-first**  
-  Self-hostable with full control over your data and APIs
-
----
-
-## Architecture Documentation
-
-This repository contains comprehensive architecture documentation for the Google Calendar MCP server:
-
-- [Architecture Overview](docs/architecture.md) - System architecture, components, and data flow
-- [Technology Stack](docs/tech-stack.md) - Detailed technology recommendations and rationale
-- [File Structure](docs/file-structure.md) - Recommended project organization
-- [Module Details](docs/module-details.md) - Implementation guidance for core modules
-- [Data Flows](docs/data-flows.md) - Sequence diagrams of key system interactions
-
-## System Architecture
-
-Google Calendar MCP follows a modular architecture with clear boundaries between components:
-
-```mermaid
-graph TB
-    subgraph "Client Layer"
-        CLI[Command Line Interface]
-        API[RESTful API]
-        WH[Webhooks]
-    end
-
-    subgraph "Core Layer"
-        Router[MCP Router]
-        Auth[Authentication Module]
-        NLP[Natural Language Parser]
-        Memory[Memory Module]
-        Queue[Task Queue]
-    end
-
-    subgraph "Integration Layer"
-        Calendar[Google Calendar Integration]
-        Docs[Google Docs Integration]
-    end
-
-    subgraph "Model Layer"
-        ModelRouter[AI Model Router]
-        GPT[GPT-4o Adapter]
-        Claude[Claude Adapter]
-        Gemini[Gemini Adapter]
-    end
-
-    subgraph "Infrastructure Layer"
-        DB[(Database)]
-        Cache[(Cache)]
-        Scheduler[Cron Scheduler]
-    end
-
-    %% Core connections
-    CLI --> Router
-    API --> Router
-    WH --> Router
-    Router --> Auth
-    Router --> NLP
-    Router --> Calendar
-    Router --> Docs
-    Router --> Memory
-    Router --> Queue
-    NLP --> ModelRouter
-    ModelRouter --> GPT
-    ModelRouter --> Claude
-    ModelRouter --> Gemini
-```
-
-## Quick Start
+## Setup
 
 ### Prerequisites
 
-- Node.js (v18 or higher)
+- Node.js (v14 or higher)
 - npm or yarn
-- MongoDB (optional for local development)
-- Redis (optional for local development)
+- Google Cloud Platform account with Calendar and Docs APIs enabled
+- Redis (for task scheduling and caching)
 
 ### Installation
 
 1. Clone the repository:
+
 ```bash
 git clone https://github.com/yourusername/google-calendar-mcp-server.git
 cd google-calendar-mcp-server
 ```
 
 2. Install dependencies:
+
 ```bash
 npm install
 ```
 
-3. Set up environment variables:
-```bash
-cp .env.example .env
-```
-Edit the `.env` file with your specific settings.
+3. Build the project:
 
-4. Build the project:
 ```bash
 npm run build
 ```
 
-5. Start the server:
+### Configuration
+
+1. Copy the example environment file:
+
 ```bash
-npm start
+cp .env.example .env
 ```
 
+2. Edit the `.env` file with your configuration:
+
+```env
+# Application
+PORT=3000
+NODE_ENV=development
+LOG_LEVEL=info
+
+# Security
+JWT_SECRET=your-jwt-secret
+SESSION_SECRET=your-session-secret
+WEBHOOK_SECRET=your-webhook-secret
+
+# Google API
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+GOOGLE_REDIRECT_URI=http://localhost:3000/api/v1/auth/google/callback
+
+# AI Models
+OPENAI_API_KEY=your-openai-api-key
+
+# Redis
+REDIS_URL=redis://localhost:6379
+```
+
+3. Set up your Google Cloud Platform project:
+
+- Create a new project in the [Google Cloud Console](https://console.cloud.google.com/)
+- Enable the Google Calendar API and Google Docs API
+- Create OAuth 2.0 credentials and configure the redirect URI
+- Download the credentials and update your `.env` file
+
+## Usage
+
+### Starting the Server
+
 For development:
+
 ```bash
 npm run dev
 ```
 
-### OAuth Setup
+For production:
 
-1. Go to the [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project
-3. Enable the Google Calendar API and Google Docs API
-4. Set up OAuth consent screen
-5. Create OAuth 2.0 credentials
-6. Add the credentials to your `.env` file
+```bash
+npm run build
+npm start
+```
 
-## Technology Stack
+### API Endpoints
 
-- **Runtime**: Node.js with TypeScript
-- **Framework**: Express.js
-- **Database**: MongoDB
-- **Cache**: Redis
-- **Queue**: Bull
-- **LLM Framework**: LangChain.js
-- **Authentication**: OAuth2.0
-- **Containerization**: Docker & Docker Compose
+The server exposes the following main endpoints:
 
-For more details on technology choices, see the [Technology Stack](docs/tech-stack.md) documentation.
+- `GET /api/health`: Health check endpoint
+- `POST /api/v1/mcp/process`: MCP command processing endpoint
+- `GET /api/v1/auth/google/login`: Google OAuth login
+- `GET /api/v1/auth/google/callback`: Google OAuth callback
+- `GET /api/v1/user/profile`: Get user profile
+- `GET /api/v1/user/preferences`: Get user preferences
+- `PUT /api/v1/user/preferences`: Update user preferences
+- `POST /api/v1/nlp/process`: Process natural language input
+- `GET /api/v1/calendar/events`: List calendar events
+- `POST /api/v1/calendar/events`: Create a calendar event
+- `GET /api/v1/docs`: List Google Docs
+- `POST /api/v1/docs`: Create a Google Doc
 
-## Development Roadmap
+### MCP Commands
 
-- [x] Architecture documentation
-- [x] Initial project setup
-- [ ] Core module implementation
-- [ ] Google API integrations
-- [ ] Model adapters
-- [ ] Client interfaces
-- [ ] Scheduler implementation
-- [ ] Testing and security review
-- [ ] Deployment guides
+The server supports the following MCP commands:
 
-## Contributing
+- `CREATE_EVENT`: Create a calendar event
+- `UPDATE_EVENT`: Update an existing calendar event
+- `DELETE_EVENT`: Delete a calendar event
+- `QUERY_EVENTS`: Query calendar events
+- `CREATE_DOCUMENT`: Create a Google Doc
+- `UPDATE_DOCUMENT`: Update a Google Doc
+- `SET_PREFERENCE`: Update user preferences
+- `GET_PREFERENCE`: Get user preferences
 
-Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
+Example MCP command:
+
+```json
+{
+  "command": "CREATE_EVENT",
+  "parameters": {
+    "title": "Team Meeting",
+    "startTime": "2023-05-15T14:00:00Z",
+    "endTime": "2023-05-15T15:00:00Z",
+    "description": "Weekly team sync",
+    "attendees": ["teammate@example.com"]
+  }
+}
+```
+
+## Development
+
+### Project Structure
+
+The project follows a modular architecture:
+
+```
+src/
+├── api/            # API routes and controllers
+├── config/         # Configuration management
+├── core/           # Core functionality
+│   ├── auth/       # Authentication and authorization
+│   ├── memory/     # User context and preferences storage
+│   ├── nlp/        # Natural language processing
+│   ├── queue/      # Task queue management
+│   ├── router/     # MCP router implementation
+│   └── scheduler/  # Scheduled tasks
+├── integrations/   # External service integrations
+│   └── google/     # Google API integrations
+│       ├── calendar/ # Google Calendar integration
+│       └── docs/     # Google Docs integration
+├── models/         # AI model adapters
+├── types/          # TypeScript type definitions
+├── utils/          # Utility functions
+└── index.ts        # Application entry point
+```
+
+### Adding New Features
+
+1. Identify the appropriate module for your feature
+2. Create the necessary files following the project structure
+3. Update the module's index file to export your new feature
+4. Add any required configurations to `config/index.ts`
+5. Implement your feature with appropriate tests
+6. Update the API or MCP router to expose your feature
+
+### Testing
+
+Run the tests:
+
+```bash
+npm test
+```
+
+Run tests with coverage:
+
+```bash
+npm run test:coverage
+```
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the LICENSE file for details.
